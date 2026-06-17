@@ -14,12 +14,22 @@ data class DownloadsFilterState(
 )
 
 fun DownloadsFilterState.take(info: DownloadInfo): Boolean {
-    val tokens = keyword.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    // Split on whitespace, "$" (E-Hentai tag terminator), and "\"" (quoted tag wrapper)
+    val tokens = keyword.trim().split(Regex("[\\s$\"]+")).filter { it.isNotEmpty() }
     return mode.take(info, label) &&
         (state == -1 || info.state == state) &&
         (tokens.isEmpty() || tokens.all { token ->
-            info.title.containsIgnoreCase(token) ||
-                info.titleJpn.containsIgnoreCase(token) ||
-                info.simpleTags?.any { it.containsIgnoreCase(token) } == true
+            // Strip namespace prefix for matching: "artist:tanaka" -> "tanaka"
+            // This is needed because ComicInfo.xml (via toSimpleTags) stores most tags
+            // as bare names without namespace prefix, while API-sourced tags retain
+            // the full "namespace:tag" format.
+            val tagOnly = token.substringAfter(':')
+            val hasNamespace = tagOnly != token
+            fun doMatch(tok: String) = info.title.containsIgnoreCase(tok) ||
+                info.titleJpn.containsIgnoreCase(tok) ||
+                info.simpleTags?.any { tag ->
+                    tag.equals(tok, ignoreCase = true) || tag.containsIgnoreCase(tok)
+                } == true
+            doMatch(token) || (hasNamespace && doMatch(tagOnly))
         })
 }
