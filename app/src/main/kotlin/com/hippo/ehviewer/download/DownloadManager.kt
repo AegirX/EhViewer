@@ -23,6 +23,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -107,10 +108,13 @@ object DownloadManager : OnSpiderListener, CoroutineScope {
     var isInitialized by mutableStateOf(false)
         private set
 
+    val metadataVersionState = mutableIntStateOf(0)
+
     init {
         launch {
             val mode = sortMode
             if (mode != SortMode.Default) sortDownloads(mode)
+            readMetadataFromLocal()
             isInitialized = true
         }
     }
@@ -619,6 +623,7 @@ object DownloadManager : OnSpiderListener, CoroutineScope {
             }
         }
         if (galleryInfoList.isNotEmpty()) EhDB.updateGalleryInfo(galleryInfoList)
+        metadataVersionState.intValue++
     }
 
     val isIdle: Boolean

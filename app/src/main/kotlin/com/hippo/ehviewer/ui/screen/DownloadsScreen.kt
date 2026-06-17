@@ -150,6 +150,7 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
     val showProgress by Settings.showReadingProgress.collectAsState()
     var filterState by rememberSerializable { mutableStateOf(DownloadsFilterState(filterMode, Settings.recentDownloadLabel.value)) }
     var invalidateKey by rememberSaveable { mutableStateOf(false) }
+    val metadataVersion by DownloadManager.metadataVersionState
     var isLoading by rememberSaveable { mutableStateOf(true) }
     var searchBarExpanded by rememberSaveable { mutableStateOf(false) }
     var searchBarOffsetY by remember { mutableIntStateOf(0) }
@@ -187,7 +188,7 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
     )
     val hint = stringResource(R.string.search_bar_hint, title)
     val list = if (DownloadManager.isInitialized) {
-        remember(filterState, invalidateKey) {
+        remember(filterState, invalidateKey, metadataVersion) {
             DownloadManager.downloadInfoList.filterTo(mutableStateListOf()) { info ->
                 filterState.take(info)
             }.also {

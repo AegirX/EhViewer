@@ -131,7 +131,6 @@ class EhApplication : Application(), SingletonImageLoader.Factory {
                     Settings.downloadFilterMode.value = DownloadsFilterMode.CUSTOM.flag
                 }
                 initialized = true
-                DownloadManager.readMetadataFromLocal()
             }
             launch {
                 FileUtils.cleanupDirectory(AppConfig.externalCrashDir)

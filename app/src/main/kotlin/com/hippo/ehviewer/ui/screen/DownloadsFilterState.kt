@@ -13,10 +13,13 @@ data class DownloadsFilterState(
     val keyword: String = "",
 )
 
-fun DownloadsFilterState.take(info: DownloadInfo) = mode.take(info, label) &&
-    (state == -1 || info.state == state) &&
-    with(info) {
-        title.containsIgnoreCase(keyword) ||
-            titleJpn.containsIgnoreCase(keyword) ||
-            simpleTags?.any { it.containsIgnoreCase(keyword) } == true
-    }
+fun DownloadsFilterState.take(info: DownloadInfo): Boolean {
+    val tokens = keyword.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    return mode.take(info, label) &&
+        (state == -1 || info.state == state) &&
+        (tokens.isEmpty() || tokens.all { token ->
+            info.title.containsIgnoreCase(token) ||
+                info.titleJpn.containsIgnoreCase(token) ||
+                info.simpleTags?.any { it.containsIgnoreCase(token) } == true
+        })
+}
