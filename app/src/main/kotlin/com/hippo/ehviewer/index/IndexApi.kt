@@ -54,6 +54,7 @@ data class IndexPage(
     val firstMatchLine: Int,
     val firstLine: Int,
     val lines: List<String>,
+    val mtime: String = "",
 )
 
 object IndexApi {
@@ -155,6 +156,7 @@ object IndexApi {
             firstMatchLine = json.optInt("firstMatchLine", -1),
             firstLine = json.optInt("from", 1),
             lines = lines,
+            mtime = json.optString("mtime"),
         )
     }
 
