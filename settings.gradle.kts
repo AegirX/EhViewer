@@ -48,3 +48,5 @@ include(":core:common")
 include(":core:data")
 include(":core:i18n")
 include(":core:ui")
+
+include(":reader")
