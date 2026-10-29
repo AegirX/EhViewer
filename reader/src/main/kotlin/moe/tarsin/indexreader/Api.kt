@@ -33,29 +33,51 @@ data class ReadPage(
 )
 
 object Api {
+    fun normalizeServer(raw: String): String {
+        var s = raw.trim()
+        if (s.isEmpty()) return ""
+        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s"
+        val hostPart = s.substringAfter("://")
+        if (!hostPart.contains(':')) s = s.trimEnd('/') + ":8765"
+        return s.trimEnd('/')
+    }
+    private fun exec(url: String): JSONObject {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 6000
+        conn.readTimeout = 20000
+        conn.setRequestProperty("Accept", "application/json")
+        conn.setRequestProperty("Connection", "close")
+        try {
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IOException("HTTP $code ${body.take(120)}")
+            val json = JSONObject(body)
+            if (json.has("error")) throw IOException(json.optString("error"))
+            return json
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     private suspend fun get(base: String, path: String, params: List<Pair<String, String>>): JSONObject =
         withContext(Dispatchers.IO) {
+            val root = normalizeServer(base)
+            if (root.isEmpty()) throw IOException("服务器地址为空")
             val query = params.joinToString("&") { (k, v) ->
                 URLEncoder.encode(k, "UTF-8") + "=" + URLEncoder.encode(v, "UTF-8")
             }
-            val root = base.trim().trimEnd('/')
-            if (root.isEmpty()) throw IOException("服务器地址为空")
             val url = root + path + if (query.isEmpty()) "" else "?$query"
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 8000
-            conn.readTimeout = 25000
-            conn.setRequestProperty("Accept", "application/json")
-            try {
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) throw IOException("HTTP $code")
-                val json = JSONObject(body)
-                if (json.has("error")) throw IOException(json.optString("error"))
-                json
-            } finally {
-                conn.disconnect()
+            var lastError: IOException? = null
+            for (attempt in 0 until 2) {
+                try {
+                    return@withContext exec(url)
+                } catch (e: IOException) {
+                    lastError = e
+                    if (attempt == 0) Thread.sleep(300)
+                }
             }
+            throw IOException("连不上 $url：${lastError?.message ?: "未知错误"}")
         }
 
     suspend fun meta(base: String): Meta {

@@ -119,15 +119,17 @@ private fun SetupScreen(initial: String, onConnected: (String) -> Unit) {
             Button(
                 enabled = !busy && text.isNotBlank(),
                 onClick = {
+                    val target = Api.normalizeServer(text)
+                    text = target
                     busy = true
-                    status = "连接中…"
+                    status = "连接中… $target"
                     scope.launch {
                         try {
-                            val meta = Api.meta(text)
+                            val meta = Api.meta(target)
                             status = "已连接：${meta.docs} 条索引，${meta.folders} 个文件夹"
-                            onConnected(text.trim())
+                            onConnected(target)
                         } catch (e: Exception) {
-                            status = "连接失败：" + (e.message ?: "未知错误")
+                            status = e.message ?: "连接失败"
                         } finally {
                             busy = false
                         }
