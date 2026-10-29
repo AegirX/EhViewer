@@ -222,7 +222,7 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
                 val lines = chunks[index / PAGE_LINES]
                 val text = lines?.getOrNull(index % PAGE_LINES)
                 if (text == null) {
-                    Spacer(Modifier.height(fontSp.sp))
+                    Spacer(Modifier.height((fontSp * 1.7f).dp))
                 } else {
                     LineText(text, terms, fontSp)
                 }
