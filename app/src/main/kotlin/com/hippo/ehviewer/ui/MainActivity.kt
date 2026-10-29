@@ -133,6 +133,9 @@ import com.hippo.ehviewer.ui.destinations.DownloadsScreenDestination
 import com.hippo.ehviewer.ui.destinations.FavouritesScreenDestination
 import com.hippo.ehviewer.ui.destinations.HistoryScreenDestination
 import com.hippo.ehviewer.ui.destinations.HomePageScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexFavoritesScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexHistoryScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexHomeScreenDestination
 import com.hippo.ehviewer.ui.destinations.ProgressScreenDestination
 import com.hippo.ehviewer.ui.destinations.SettingsScreenDestination
 import com.hippo.ehviewer.ui.destinations.SignInScreenDestination
@@ -171,13 +174,9 @@ import splitties.systemservices.clipboardManager
 import splitties.systemservices.connectivityManager
 
 private val navItems = arrayOf<Triple<Direction, Int, ImageVector>>(
-    Triple(HomePageScreenDestination, R.string.homepage, Icons.Default.Home),
-    Triple(SubscriptionScreenDestination, R.string.subscription, EhIcons.Default.Subscriptions),
-    Triple(WhatshotScreenDestination, R.string.whats_hot, Icons.Default.Whatshot),
-    Triple(ToplistScreenDestination, R.string.toplist, Icons.Default.FormatListNumbered),
-    Triple(FavouritesScreenDestination, R.string.favourite, Icons.Default.Favorite),
-    Triple(HistoryScreenDestination, R.string.history, Icons.Default.History),
-    Triple(DownloadsScreenDestination, R.string.downloads, Icons.Default.Download),
+    Triple(IndexHomeScreenDestination, R.string.homepage, Icons.Default.Home),
+    Triple(IndexFavoritesScreenDestination, R.string.favourite, Icons.Default.Favorite),
+    Triple(IndexHistoryScreenDestination, R.string.history, Icons.Default.History),
     Triple(SettingsScreenDestination, R.string.settings, Icons.Default.Settings),
 )
 
@@ -252,19 +251,9 @@ class MainActivity : AppCompatActivity() {
             if (!AppConfig.isBenchmark) {
                 val noNetwork = stringResource(R.string.no_network)
                 LaunchedEffect(Unit) {
-                    runCatching { checkDownloadLocation() }
+                    // 这个构建只读局域网索引：不检查下载目录，也不检查上游版本更新。
                     runCatching { checkAppLinkVerify() }
-                    if (hasNetwork) {
-                        runSuspendCatching {
-                            withIOContext {
-                                AppUpdater.checkForUpdate()?.let { showNewVersion(it) }
-                            }
-                        }.onFailure {
-                            snackbarState.showSnackbar(getString(R.string.update_failed, it.displayString()))
-                        }
-                    } else {
-                        snackbarState.showSnackbar(noNetwork)
-                    }
+                    if (!hasNetwork) snackbarState.showSnackbar(noNetwork)
                 }
             }
 
@@ -466,11 +455,8 @@ class MainActivity : AppCompatActivity() {
                         ) {
                             SharedTransitionLayout {
                                 CompositionLocalProvider(LocalSharedTransitionScope provides this) {
-                                    val start = when {
-                                        needSignIn -> SignInScreenDestination
-                                        hasNetwork -> navItems[launchPage].first
-                                        else -> DownloadsScreenDestination
-                                    }
+                                    // 这个构建以本机索引为唯一数据源，启动页固定为索引搜索。
+                                    val start = IndexHomeScreenDestination
                                     DestinationsNavHost(
                                         navGraph = NavGraphs.root,
                                         start = start,

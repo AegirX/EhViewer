@@ -16,4 +16,6 @@
   ~ If not, see <https://www.gnu.org/licenses/>.
   -->
 <network-security-config>
+    <!-- 局域网索引服务器走明文 HTTP -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

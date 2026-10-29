@@ -55,7 +55,8 @@ android {
     val snapshot = !hasProperty("release")
 
     defaultConfig {
-        applicationId = "moe.tarsin.ehviewer"
+        // 独立应用 ID，安装后不会覆盖 / 升级官方 EhViewer。
+        applicationId = "moe.tarsin.ehviewer.index"
         versionCode = 180063
         versionName = if (snapshot) {
             "1.15.0-SNAPSHOT"
