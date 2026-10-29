@@ -87,6 +87,7 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
     var error by remember { mutableStateOf<String?>(null) }
     var chrome by remember { mutableStateOf(true) }
     var restored by remember { mutableStateOf(false) }
+    var loadedOnce by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val terms = remember(query) {
@@ -94,7 +95,8 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
     }
 
     suspend fun loadPage(page: Int, initial: Boolean = false) {
-        if (page < 0) return
+        // page == -1 是合法请求：让服务端跳到第一个匹配页。
+        if (page < -1) return
         if (chunks.containsKey(page)) return
         val started = synchronized(inFlight) { inFlight.add(page) }
         if (!started) return
@@ -111,6 +113,7 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
             error = e.message ?: e.toString()
         } finally {
             synchronized(inFlight) { inFlight.remove(page) }
+            loadedOnce = true
         }
     }
 
@@ -202,7 +205,10 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
                 item {
                     Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("读取失败：$message", color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = { error = null; scope.launch { loadPage(0, initial = true) } }) {
+                        TextButton(onClick = {
+                            error = null
+                            scope.launch { loadPage(if (query.isNotBlank()) -1 else 0, initial = true) }
+                        }) {
                             Text("重试")
                         }
                     }
@@ -211,7 +217,11 @@ fun IndexReaderContent(path: String, name: String, query: String, navigator: Des
             if (totalLines == 0 && error == null) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(28.dp))
+                        if (loadedOnce) {
+                            Text("这个文件没有可显示的内容")
+                        } else {
+                            CircularProgressIndicator(Modifier.size(28.dp))
+                        }
                     }
                 }
             }
