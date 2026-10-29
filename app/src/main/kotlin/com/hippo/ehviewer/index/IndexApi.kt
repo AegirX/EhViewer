@@ -75,7 +75,8 @@ object IndexApi {
         return b + path
     }
 
-    private fun get(path: String): JSONObject {
+    // OkHttp 的同步调用必须离开主线程，否则会抛 NetworkOnMainThreadException。
+    private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(full(path)).header("Accept", "application/json").build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
@@ -83,13 +84,13 @@ object IndexApi {
                 throw IOException("HTTP ${response.code}" + if (text.isEmpty()) "" else "：$text")
             }
             if (text.isEmpty()) throw IOException("服务器返回了空响应")
-            return JSONObject(text)
+            JSONObject(text)
         }
     }
 
-    fun meta(): JSONObject = get("/api/meta")
+    suspend fun meta(): JSONObject = get("/api/meta")
 
-    fun search(
+    suspend fun search(
         terms: List<String>,
         excludes: List<String> = emptyList(),
         and: Boolean = true,
@@ -135,7 +136,7 @@ object IndexApi {
         )
     }
 
-    fun read(path: String, query: String?, page: Int): IndexPage {
+    suspend fun read(path: String, query: String?, page: Int): IndexPage {
         val sb = StringBuilder("/api/read?path=").append(enc(path)).append("&page=").append(page)
         if (!query.isNullOrBlank()) sb.append("&q=").append(enc(query))
         val json = get(sb.toString())
