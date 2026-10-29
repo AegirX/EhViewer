@@ -26,6 +26,11 @@ java -cp tools/lucene-core-3.0.3.jar;server/out FLServer "E:\index" 8765 web
 | `GET /api/search?t=..&x=..&op=and\|or&m=..&sort=..&order=..&ext=..&lookin=..` | 搜索 |
 | `GET /api/read?path=..&page=..&q=..` | 按块读取正文 |
 
+## 安装
+
+APK 与 EhViewer 是两个独立应用（包名 `moe.tarsin.indexreader` vs `moe.tarsin.ehviewer`），可并存，互不覆盖。
+CI 产物名为 `index-reader-apk`，解压得到 `index-reader-0.1.0.apk` 与 `README.txt`。
+
 ## 构建
 
 ```

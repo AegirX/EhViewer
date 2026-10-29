@@ -69,11 +69,26 @@ jobs:
       - name: Build reader
         run: ./gradlew :reader:assembleDebug
 
+      - name: Stage reader APK
+        run: |
+          mkdir -p out
+          cp reader/build/outputs/apk/debug/reader-debug.apk out/index-reader-0.1.0.apk
+          printf '%s\n' \
+            'Index Reader (independent app)' \
+            '' \
+            'package: moe.tarsin.indexreader' \
+            'EhViewer package: moe.tarsin.ehviewer' \
+            '' \
+            'Installing this APK does not replace or upgrade EhViewer.' \
+            'Both apps can be installed side by side.' \
+            'Run the index server on your PC first, then enter http://<pc-ip>:8765 in the app.' \
+            > out/README.txt
+
       - name: Upload reader APK
         uses: actions/upload-artifact@v7
         with:
-          name: reader-debug-apk
-          path: reader/build/outputs/apk/debug/reader-debug.apk
+          name: index-reader-apk
+          path: out/
 
   default:
     runs-on: ubuntu-latest
