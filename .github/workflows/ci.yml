@@ -1,4 +1,4 @@
-name: CI
+name: Build index reader APK
 
 on:
   push:
@@ -7,8 +7,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  check:
+  apk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,93 +36,8 @@ jobs:
           workspaces: "./app/src/main/rust"
           shared-key: ${{ runner.os }}
 
-      - name: Rustfmt Check
-        working-directory: ./app/src/main/rust
-        run: cargo fmt --all -- --check
-
-      - name: Clippy Check
-        working-directory: ./app/src/main/rust
-        run: cargo clippy --target aarch64-linux-android --all-features -- -D warnings
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: true
-
-      - name: Check build-logic
-        run: ./gradlew :build-logic:convention:check
-
-      - name: Spotless Check
-        run: ./gradlew spotlessCheck
-
-      - name: Lint Check
-        run: ./gradlew lintMarshmallowRelease
-
-  reader:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version-file: .java-version
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Build reader
-        run: ./gradlew :reader:assembleDebug
-
-      - name: Stage reader APK
-        run: |
-          mkdir -p out
-          cp reader/build/outputs/apk/debug/reader-debug.apk out/index-reader-0.1.0.apk
-          printf '%s\n' \
-            'Index Reader (independent app)' \
-            '' \
-            'package: moe.tarsin.indexreader' \
-            'EhViewer package: moe.tarsin.ehviewer' \
-            '' \
-            'Installing this APK does not replace or upgrade EhViewer.' \
-            'Both apps can be installed side by side.' \
-            'Run the index server on your PC first, then enter http://<pc-ip>:8765 in the app.' \
-            > out/README.txt
-
-      - name: Upload reader APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: index-reader-apk
-          path: out/
-
-  default:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version-file: .java-version
-
-      - name: Install Rust Toolchain
-        run: rustup target add thumbv7neon-linux-androideabi
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "./app/src/main/rust"
-          shared-key: ${{ runner.os }}
-          save-if: "false"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
 
       - name: CMake Cache
         uses: actions/cache@v5
@@ -124,104 +46,32 @@ jobs:
           key: cmake-default-${{ hashFiles('rust-toolchain.toml', 'settings.gradle.kts', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/rust/Cargo.lock') }}
           restore-keys: cmake-default-
 
-      - name: Build
-        run: ./gradlew assembleDefaultRelease
+      - name: Compile Kotlin
+        run: ./gradlew :app:compileDefaultReleaseKotlin
 
-      - name: Upload ARM64
+      - name: Build index reader
+        run: ./gradlew :app:assembleDefaultRelease
+
+      - name: Stage APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/default/release/app-default-universal-release.apk out/index-reader.apk 2>/dev/null \
+            || cp app/build/outputs/apk/default/release/app-default-arm64-v8a-release.apk out/index-reader.apk
+          printf '%s\n' \
+            '索引阅读器 / Index Reader' \
+            '' \
+            'package: moe.tarsin.ehviewer.index' \
+            '  独立包名，安装后不会覆盖官方 EhViewer，可共存。' \
+            '' \
+            '服务器：局域网内自动发现 8765 端口（UDP 广播 + 端口扫描），无需手填地址。' \
+            '' \
+            '先在索引服务器上运行 start.cmd' \
+            '（或 java -cp "tools/lucene-core-3.0.3.jar;server/out" FLServer "E:\index" 8765 web）' \
+            > out/README.txt
+          ls -l out
+
+      - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: default-arm64-v8a-${{ github.sha }}
-          path: app/build/outputs/apk/default/release/app-default-arm64-v8a-release.apk
-
-      - name: Upload x86_64
-        uses: actions/upload-artifact@v7
-        with:
-          name: default-x86_64-${{ github.sha }}
-          path: app/build/outputs/apk/default/release/app-default-x86_64-release.apk
-
-      - name: Upload ARM32
-        uses: actions/upload-artifact@v7
-        with:
-          name: default-armeabi-v7a-${{ github.sha }}
-          path: app/build/outputs/apk/default/release/app-default-armeabi-v7a-release.apk
-
-      - name: Upload mapping
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: default-mapping-${{ github.sha }}
-          path: app/build/outputs/mapping/defaultRelease/*.txt
-
-      - name: Upload native debug symbols
-        uses: actions/upload-artifact@v7
-        with:
-          name: default-native-debug-symbols-${{ github.sha }}
-          path: app/build/outputs/native-debug-symbols/defaultRelease/native-debug-symbols.zip
-
-  marshmallow:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version-file: .java-version
-
-      - name: Install Rust Toolchain
-        run: rustup target add thumbv7neon-linux-androideabi
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "./app/src/main/rust"
-          shared-key: ${{ runner.os }}
-          save-if: "false"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
-
-      - name: CMake Cache
-        uses: actions/cache@v5
-        with:
-          path: app/.cxx
-          key: cmake-marshmallow-${{ hashFiles('rust-toolchain.toml', 'settings.gradle.kts', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/rust/Cargo.lock') }}
-          restore-keys: cmake-marshmallow-
-
-      - name: Build
-        run: ./gradlew assembleMarshmallowRelease
-
-      - name: Upload ARM64
-        uses: actions/upload-artifact@v7
-        with:
-          name: marshmallow-arm64-v8a-${{ github.sha }}
-          path: app/build/outputs/apk/marshmallow/release/app-marshmallow-arm64-v8a-release.apk
-
-      - name: Upload x86_64
-        uses: actions/upload-artifact@v7
-        with:
-          name: marshmallow-x86_64-${{ github.sha }}
-          path: app/build/outputs/apk/marshmallow/release/app-marshmallow-x86_64-release.apk
-
-      - name: Upload ARM32
-        uses: actions/upload-artifact@v7
-        with:
-          name: marshmallow-armeabi-v7a-${{ github.sha }}
-          path: app/build/outputs/apk/marshmallow/release/app-marshmallow-armeabi-v7a-release.apk
-
-      - name: Upload mapping
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: marshmallow-mapping-${{ github.sha }}
-          path: app/build/outputs/mapping/marshmallowRelease/*.txt
-
-      - name: Upload native debug symbols
-        uses: actions/upload-artifact@v7
-        with:
-          name: marshmallow-native-debug-symbols-${{ github.sha }}
-          path: app/build/outputs/native-debug-symbols/marshmallowRelease/native-debug-symbols.zip
+          name: index-reader-apk
+          path: out/

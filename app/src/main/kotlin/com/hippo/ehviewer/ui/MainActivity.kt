@@ -252,19 +252,9 @@ class MainActivity : AppCompatActivity() {
             if (!AppConfig.isBenchmark) {
                 val noNetwork = stringResource(R.string.no_network)
                 LaunchedEffect(Unit) {
-                    runCatching { checkDownloadLocation() }
+                    // 这个构建只读局域网索引：不检查下载目录，也不检查上游版本更新。
                     runCatching { checkAppLinkVerify() }
-                    if (hasNetwork) {
-                        runSuspendCatching {
-                            withIOContext {
-                                AppUpdater.checkForUpdate()?.let { showNewVersion(it) }
-                            }
-                        }.onFailure {
-                            snackbarState.showSnackbar(getString(R.string.update_failed, it.displayString()))
-                        }
-                    } else {
-                        snackbarState.showSnackbar(noNetwork)
-                    }
+                    if (!hasNetwork) snackbarState.showSnackbar(noNetwork)
                 }
             }
 
@@ -466,11 +456,8 @@ class MainActivity : AppCompatActivity() {
                         ) {
                             SharedTransitionLayout {
                                 CompositionLocalProvider(LocalSharedTransitionScope provides this) {
-                                    val start = when {
-                                        needSignIn -> SignInScreenDestination
-                                        hasNetwork -> navItems[launchPage].first
-                                        else -> DownloadsScreenDestination
-                                    }
+                                    // 这个构建以本机索引为唯一数据源，启动页固定为索引搜索。
+                                    val start = HomePageScreenDestination
                                     DestinationsNavHost(
                                         navGraph = NavGraphs.root,
                                         start = start,
