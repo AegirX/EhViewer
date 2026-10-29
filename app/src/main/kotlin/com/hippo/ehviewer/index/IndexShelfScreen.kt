@@ -129,7 +129,7 @@ fun IndexShelfContent(kind: ShelfKind, navigator: DestinationsNavigator) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(if (kind == ShelfKind.History) "还没有阅读记录" else "还没有收藏的书")
                     Text(
-                        if (kind == ShelfKind.History) "打开任意搜索结果后会自动记录" else "在搜索结果里点右侧的 ♥ 即可收藏",
+                        if (kind == ShelfKind.History) "打开任意搜索结果后会自动记录" else "在搜索结果里点右侧的 ♥ 即可收藏，收藏后自动下载到本地",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

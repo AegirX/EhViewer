@@ -187,6 +187,8 @@ fun IndexSearchScaffold() {
         scope.launch(Dispatchers.IO) {
             IndexStore.touch(context, hit.path, hit.name, hit.dir, hit.size, hit.mtime, 0, 0)
             IndexStore.setFavorite(context, hit.path, next)
+            // 收藏即把正文拉到本地，断网也能读
+            if (next) runCatching { IndexStore.cacheAll(context, hit.path, hit.name, hit.dir) }
         }
     }
 

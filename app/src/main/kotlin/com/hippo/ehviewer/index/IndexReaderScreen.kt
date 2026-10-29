@@ -225,6 +225,7 @@ fun IndexReaderContent(
                             scope.launch(Dispatchers.IO) {
                                 IndexStore.touch(context, path, name, dir, size, mtime, listState.firstVisibleItemIndex, totalLines)
                                 IndexStore.setFavorite(context, path, next)
+                                if (next) runCatching { IndexStore.cacheAll(context, path, name, dir) }
                             }
                         }) {
                             Icon(
