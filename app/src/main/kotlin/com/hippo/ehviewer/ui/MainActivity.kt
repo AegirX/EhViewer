@@ -133,6 +133,9 @@ import com.hippo.ehviewer.ui.destinations.DownloadsScreenDestination
 import com.hippo.ehviewer.ui.destinations.FavouritesScreenDestination
 import com.hippo.ehviewer.ui.destinations.HistoryScreenDestination
 import com.hippo.ehviewer.ui.destinations.HomePageScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexFavoritesScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexHistoryScreenDestination
+import com.hippo.ehviewer.ui.destinations.IndexHomeScreenDestination
 import com.hippo.ehviewer.ui.destinations.ProgressScreenDestination
 import com.hippo.ehviewer.ui.destinations.SettingsScreenDestination
 import com.hippo.ehviewer.ui.destinations.SignInScreenDestination
@@ -171,13 +174,9 @@ import splitties.systemservices.clipboardManager
 import splitties.systemservices.connectivityManager
 
 private val navItems = arrayOf<Triple<Direction, Int, ImageVector>>(
-    Triple(HomePageScreenDestination, R.string.homepage, Icons.Default.Home),
-    Triple(SubscriptionScreenDestination, R.string.subscription, EhIcons.Default.Subscriptions),
-    Triple(WhatshotScreenDestination, R.string.whats_hot, Icons.Default.Whatshot),
-    Triple(ToplistScreenDestination, R.string.toplist, Icons.Default.FormatListNumbered),
-    Triple(FavouritesScreenDestination, R.string.favourite, Icons.Default.Favorite),
-    Triple(HistoryScreenDestination, R.string.history, Icons.Default.History),
-    Triple(DownloadsScreenDestination, R.string.downloads, Icons.Default.Download),
+    Triple(IndexHomeScreenDestination, R.string.homepage, Icons.Default.Home),
+    Triple(IndexFavoritesScreenDestination, R.string.favourite, Icons.Default.Favorite),
+    Triple(IndexHistoryScreenDestination, R.string.history, Icons.Default.History),
     Triple(SettingsScreenDestination, R.string.settings, Icons.Default.Settings),
 )
 
@@ -457,7 +456,7 @@ class MainActivity : AppCompatActivity() {
                             SharedTransitionLayout {
                                 CompositionLocalProvider(LocalSharedTransitionScope provides this) {
                                     // 这个构建以本机索引为唯一数据源，启动页固定为索引搜索。
-                                    val start = HomePageScreenDestination
+                                    val start = IndexHomeScreenDestination
                                     DestinationsNavHost(
                                         navGraph = NavGraphs.root,
                                         start = start,

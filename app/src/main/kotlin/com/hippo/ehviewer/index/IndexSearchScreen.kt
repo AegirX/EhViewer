@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -32,18 +35,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.IndexReaderScreenDestination
 import com.hippo.ehviewer.ui.screen.SearchBarScreen
@@ -52,12 +57,31 @@ import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.tarsin.navigate
 
 private val SORTS = listOf("rel" to "相关度", "name" to "名称", "size" to "大小", "mtime" to "时间")
 private val SCOPES = listOf("all" to "全文+文件名", "content" to "正文", "name" to "文件名")
 private val EXTS = listOf("" to "全部类型", "txt" to "txt", "epub" to "epub")
+
+/** 搜索结果状态放在 ViewModel 里，从阅读页返回时列表不会丢。 */
+class IndexSearchViewModel : ViewModel() {
+    var query by mutableStateOf("")
+    var hits by mutableStateOf(emptyList<IndexHit>())
+    var total by mutableStateOf(0)
+    var took by mutableLongStateOf(0L)
+    var loading by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+    var status by mutableStateOf("正在局域网里查找索引服务器…")
+    var sortKey by mutableStateOf("rel")
+    var desc by mutableStateOf(true)
+    var matchAll by mutableStateOf(true)
+    var scopeKey by mutableStateOf("all")
+    var ext by mutableStateOf("")
+    var discovered by mutableStateOf(false)
+}
 
 @Destination<RootGraph>
 @Composable
@@ -70,21 +94,12 @@ context(_: DialogState, _: DestinationsNavigator, _: CoroutineScope)
 fun IndexSearchScaffold() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val vm: IndexSearchViewModel = viewModel()
+    val listState = rememberLazyListState()
     val searchFieldState = rememberTextFieldState()
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
-    var hits by remember { mutableStateOf(listOf<IndexHit>()) }
-    var total by remember { mutableIntStateOf(0) }
-    var took by remember { mutableLongStateOf(0L) }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var server by remember { mutableStateOf<String?>(null) }
-    var status by remember { mutableStateOf("正在局域网里查找索引服务器…") }
-    var sortKey by rememberSaveable { mutableStateOf("rel") }
-    var desc by rememberSaveable { mutableStateOf(true) }
-    var matchAll by rememberSaveable { mutableStateOf(true) }
-    var scopeKey by rememberSaveable { mutableStateOf("all") }
-    var ext by rememberSaveable { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+    val favorites = remember { mutableStateMapOf<String, Boolean>() }
+    var filterReady by remember { mutableStateOf(false) }
 
     fun parse(text: String): Pair<List<String>, List<String>> {
         val positive = ArrayList<String>()
@@ -96,61 +111,88 @@ fun IndexSearchScaffold() {
     }
 
     fun runSearch(append: Boolean = false, from: Int = 0) {
-        val (positive, negative) = parse(query)
+        val (positive, negative) = parse(vm.query)
         if (positive.isEmpty() && negative.isEmpty()) return
-        loading = true
-        error = null
+        vm.loading = true
+        vm.error = null
         scope.launch {
             try {
                 if (!IndexApi.connected) {
-                    server = IndexDiscovery.discover(context)
+                    vm.status = "已连接 ${IndexDiscovery.discover(context)}"
+                    vm.discovered = true
                 }
                 val result = IndexApi.search(
                     terms = positive,
                     excludes = negative,
-                    and = matchAll,
-                    sort = sortKey,
-                    desc = desc,
-                    scope = scopeKey,
-                    ext = ext,
+                    and = vm.matchAll,
+                    sort = vm.sortKey,
+                    desc = vm.desc,
+                    scope = vm.scopeKey,
+                    ext = vm.ext,
                     from = from,
                     limit = 100,
                 )
-                hits = if (append) hits + result.hits else result.hits
-                total = result.total
-                took = result.took
-                status = "已连接 ${IndexApi.base}"
+                vm.hits = if (append) vm.hits + result.hits else result.hits
+                vm.total = result.total
+                vm.took = result.took
+                vm.status = "已连接 ${IndexApi.base}"
             } catch (e: Exception) {
-                error = e.message ?: e.toString()
+                vm.error = e.message ?: e.toString()
                 IndexApi.setBase(null)
                 runCatching {
-                    server = IndexDiscovery.discover(context, force = true)
-                    status = "已连接 $server"
+                    vm.status = "已连接 ${IndexDiscovery.discover(context, force = true)}"
+                    vm.discovered = true
                 }.onFailure {
-                    status = "未找到索引服务器"
+                    vm.status = "未找到索引服务器"
+                    vm.discovered = false
                 }
             } finally {
-                loading = false
+                vm.loading = false
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        runCatching {
-            server = IndexDiscovery.discover(context)
-            status = "已连接 $server"
-        }.onFailure {
-            status = "未找到索引服务器：${it.message}"
+        if (!vm.discovered) {
+            runCatching {
+                vm.status = "已连接 ${IndexDiscovery.discover(context)}"
+                vm.discovered = true
+            }.onFailure {
+                vm.status = "未找到索引服务器：${it.message}"
+            }
         }
     }
 
-    LaunchedEffect(sortKey, desc, matchAll, scopeKey, ext) {
-        if (hits.isNotEmpty() && query.isNotBlank()) runSearch()
+    LaunchedEffect(vm.sortKey, vm.desc, vm.matchAll, vm.scopeKey, vm.ext) {
+        // 首次进入（包含从阅读页返回）不重新搜索，只有真的改了筛选条件才刷新
+        if (!filterReady) {
+            filterReady = true
+            return@LaunchedEffect
+        }
+        if (vm.hits.isNotEmpty() && vm.query.isNotBlank()) runSearch()
+    }
+
+    LaunchedEffect(vm.hits) {
+        if (vm.hits.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            vm.hits.forEach { hit ->
+                favorites[hit.path] = IndexStore.entry(context, hit.path)?.favorite == true
+            }
+        }
+    }
+
+    fun toggleFavorite(hit: IndexHit) {
+        val next = favorites[hit.path] != true
+        favorites[hit.path] = next
+        scope.launch(Dispatchers.IO) {
+            IndexStore.touch(context, hit.path, hit.name, hit.dir, hit.size, hit.mtime, 0, 0)
+            IndexStore.setFavorite(context, hit.path, next)
+        }
     }
 
     SearchBarScreen(
         onApplySearch = { text ->
-            query = text
+            vm.query = text
             runSearch()
         },
         expanded = expanded,
@@ -161,12 +203,15 @@ fun IndexSearchScaffold() {
         localSearch = true,
         trailingIcon = {
             IconButton(onClick = {
-                status = "正在重新查找索引服务器…"
+                vm.status = "正在重新查找索引服务器…"
                 scope.launch {
                     runCatching {
-                        server = IndexDiscovery.discover(context, force = true)
-                        status = "已连接 $server"
-                    }.onFailure { status = "未找到索引服务器" }
+                        vm.status = "已连接 ${IndexDiscovery.discover(context, force = true)}"
+                        vm.discovered = true
+                    }.onFailure {
+                        vm.status = "未找到索引服务器"
+                        vm.discovered = false
+                    }
                 }
             }) {
                 Icon(Icons.Default.Refresh, contentDescription = "重新查找服务器")
@@ -174,20 +219,21 @@ fun IndexSearchScaffold() {
         },
         filter = {
             IndexFilterBar(
-                sortKey = sortKey,
-                desc = desc,
-                matchAll = matchAll,
-                scopeKey = scopeKey,
-                ext = ext,
-                onSortChange = { sortKey = it },
-                onToggleOrder = { desc = !desc },
-                onToggleMatch = { matchAll = !matchAll },
-                onScopeChange = { scopeKey = it },
-                onExtChange = { ext = it },
+                sortKey = vm.sortKey,
+                desc = vm.desc,
+                matchAll = vm.matchAll,
+                scopeKey = vm.scopeKey,
+                ext = vm.ext,
+                onSortChange = { vm.sortKey = it },
+                onToggleOrder = { vm.desc = !vm.desc },
+                onToggleMatch = { vm.matchAll = !vm.matchAll },
+                onScopeChange = { vm.scopeKey = it },
+                onExtChange = { vm.ext = it },
             )
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding() + 4.dp,
@@ -197,13 +243,13 @@ fun IndexSearchScaffold() {
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                     Text(
-                        text = if (hits.isEmpty()) status else "$status · 共 ${"%,d".format(total)} 条 · ${took} ms",
+                        text = if (vm.hits.isEmpty()) vm.status else "${vm.status} · 共 ${"%,d".format(vm.total)} 条 · ${vm.took} ms",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            error?.let { message ->
+            vm.error?.let { message ->
                 item {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("搜索失败：$message", color = MaterialTheme.colorScheme.error)
@@ -211,37 +257,51 @@ fun IndexSearchScaffold() {
                     }
                 }
             }
-            if (hits.isEmpty() && !loading && error == null) {
+            if (vm.hits.isEmpty() && !vm.loading && vm.error == null) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("输入关键词搜索本机索引", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "· 多个关键词用空格分隔：默认要求全部命中，可在上方切到「任一」\n" +
                                 "· 以 - 开头的词表示排除，例如：少年 -ntr\n" +
-                                "· 结果按相关度/名称/大小/时间排序，点开即可阅读",
+                                "· 点右侧 ♥ 收藏，点条目直接阅读",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
-            if (loading && hits.isEmpty()) {
+            if (vm.loading && vm.hits.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(28.dp))
                     }
                 }
             }
-            items(hits, key = { it.path }) { hit ->
-                IndexHitRow(hit) {
-                    navigate(IndexReaderScreenDestination(hit.path, hit.name, query))
-                }
+            items(vm.hits, key = { it.path }) { hit ->
+                IndexHitRow(
+                    hit = hit,
+                    favorite = favorites[hit.path] == true,
+                    onOpen = {
+                        navigate(
+                            IndexReaderScreenDestination(
+                                path = hit.path,
+                                name = hit.name,
+                                query = vm.query,
+                                dir = hit.dir,
+                                size = hit.size,
+                                mtime = hit.mtime,
+                            ),
+                        )
+                    },
+                    onFavorite = { toggleFavorite(hit) },
+                )
             }
-            if (!loading && hits.isNotEmpty() && hits.size < total) {
+            if (!vm.loading && vm.hits.isNotEmpty() && vm.hits.size < vm.total) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                        TextButton(onClick = { runSearch(append = true, from = hits.size) }) {
-                            Text("加载更多（已显示 ${hits.size} / ${"%,d".format(total)}）")
+                        TextButton(onClick = { runSearch(append = true, from = vm.hits.size) }) {
+                            Text("加载更多（已显示 ${vm.hits.size} / ${"%,d".format(vm.total)}）")
                         }
                     }
                 }
@@ -251,7 +311,12 @@ fun IndexSearchScaffold() {
 }
 
 @Composable
-private fun IndexHitRow(hit: IndexHit, onClick: () -> Unit) {
+private fun IndexHitRow(
+    hit: IndexHit,
+    favorite: Boolean,
+    onOpen: () -> Unit,
+    onFavorite: () -> Unit,
+) {
     ListItem(
         headlineContent = {
             Text(hit.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
@@ -260,13 +325,22 @@ private fun IndexHitRow(hit: IndexHit, onClick: () -> Unit) {
             Text(hit.dir, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
         },
         trailingContent = {
-            Text(
-                "${formatSize(hit.size)}\n${hit.mtime}",
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${formatSize(hit.size)}\n${hit.mtime}",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    textAlign = TextAlign.End,
+                )
+                IconButton(onClick = onFavorite) {
+                    Icon(
+                        if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (favorite) "取消收藏" else "收藏",
+                    )
+                }
+            }
         },
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
     )
 }
 
