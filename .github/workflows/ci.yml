@@ -65,8 +65,7 @@ jobs:
             '' \
             '服务器：局域网内自动发现 8765 端口（UDP 广播 + 端口扫描），无需手填地址。' \
             '' \
-            '先在索引服务器上运行 start.cmd' \
-            '（或 java -cp "tools/lucene-core-3.0.3.jar;server/out" FLServer "E:\index" 8765 web）' \
+            '先在索引服务器上执行 ./start.sh（bash / Git Bash / WSL）' \
             > out/README.txt
           ls -l out
 
