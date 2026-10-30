@@ -67,6 +67,14 @@ object IndexApi {
     val connected: Boolean
         get() = base != null
 
+    @Volatile
+    var token: String? = null
+        private set
+
+    fun setToken(value: String?) {
+        token = value?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     fun setBase(value: String?) {
         base = value?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
     }
@@ -78,7 +86,9 @@ object IndexApi {
 
     // OkHttp 的同步调用必须离开主线程，否则会抛 NetworkOnMainThreadException。
     private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(full(path)).header("Accept", "application/json").build()
+        val builder = Request.Builder().url(full(path)).header("Accept", "application/json")
+        token?.let { builder.header("X-Index-Token", it) }
+        val request = builder.build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
@@ -170,6 +180,8 @@ object IndexApi {
 object IndexDiscovery {
     private const val PREFS = "index_reader"
     private const val KEY_BASE = "server_base"
+    private const val KEY_MANUAL = "server_manual"
+    private const val KEY_TOKEN = "server_token"
 
     const val KEY_FONT_SP = "reader_font_sp"
 
@@ -177,40 +189,78 @@ object IndexDiscovery {
 
     fun cached(context: Context): String? = prefs(context).getString(KEY_BASE, null)
 
+    /** 手动指定的服务器地址（隧道 / 公网），留空则只用自动发现。 */
+    fun manual(context: Context): String? =
+        prefs(context).getString(KEY_MANUAL, null)?.takeIf { it.isNotBlank() }
+
+    fun setManual(context: Context, value: String?) {
+        prefs(context).edit().putString(KEY_MANUAL, normalizeBase(value) ?: "").apply()
+    }
+
+    fun token(context: Context): String? =
+        prefs(context).getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+    fun setToken(context: Context, value: String?) {
+        prefs(context).edit().putString(KEY_TOKEN, value?.trim() ?: "").apply()
+    }
+
+    /** 允许用户只写 `zz.frp.one:38932`；端口不补默认值，因为隧道端口是自定义的。 */
+    fun normalizeBase(value: String?): String? {
+        var v = value?.trim().orEmpty()
+        if (v.isEmpty()) return null
+        if (!v.startsWith("http://") && !v.startsWith("https://")) v = "http://$v"
+        return v.trimEnd('/')
+    }
+
     suspend fun discover(context: Context, force: Boolean = false): String = withContext(Dispatchers.IO) {
+        val auth = token(context)
+        IndexApi.setToken(auth)
+        val manualBase = manual(context)
+        if (manualBase != null && probe(manualBase, auth)) {
+            save(context, manualBase)
+            IndexApi.setBase(manualBase)
+            return@withContext manualBase
+        }
         val saved = if (force) null else cached(context)
-        if (saved != null && probe(saved)) {
+        if (saved != null && probe(saved, auth)) {
             IndexApi.setBase(saved)
             return@withContext saved
         }
         val udpHost = udpProbe()
         if (udpHost != null) {
             val candidate = "http://$udpHost:$INDEX_PORT"
-            if (probe(candidate)) {
+            if (probe(candidate, auth)) {
                 save(context, candidate)
                 IndexApi.setBase(candidate)
                 return@withContext candidate
             }
         }
         val scanned = scanLan()
-        if (scanned != null) {
+        if (scanned != null && probe(scanned, auth)) {
             save(context, scanned)
             IndexApi.setBase(scanned)
             return@withContext scanned
         }
         IndexApi.setBase(null)
-        throw IOException("局域网里没有找到索引服务器（UDP/TCP $INDEX_PORT）")
+        throw IOException(
+            if (manualBase != null) {
+                "连不上指定地址 $manualBase，局域网里也没找到服务器"
+            } else {
+                "局域网里没有找到索引服务器（$INDEX_PORT）；如果在用隧道，请在「服务器」里填地址"
+            },
+        )
     }
 
     private fun save(context: Context, base: String) {
         prefs(context).edit().putString(KEY_BASE, base).apply()
     }
 
-    fun probe(base: String): Boolean = try {
+    fun probe(base: String, auth: String? = null): Boolean = try {
         val conn = URL("$base/api/meta").openConnection() as HttpURLConnection
-        conn.connectTimeout = 1500
-        conn.readTimeout = 2500
+        conn.connectTimeout = 2500
+        conn.readTimeout = 3500
         conn.requestMethod = "GET"
+        if (!auth.isNullOrBlank()) conn.setRequestProperty("X-Index-Token", auth)
         val code = conn.responseCode
         conn.disconnect()
         code == 200

@@ -287,6 +287,7 @@ object IndexStore {
         page: Int,
     ): CachedPage = withContext(Dispatchers.IO) {
         ensureLoaded(context)
+        if (IndexApi.token == null) IndexApi.setToken(IndexDiscovery.token(context))
         val requested = if (page < 0 && !IndexApi.connected) 0 else page
         try {
             val result = IndexApi.read(path, query.ifBlank { null }, requested)
@@ -338,6 +339,7 @@ object IndexStore {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Int = withContext(Dispatchers.IO) {
         ensureLoaded(context)
+        if (IndexApi.token == null) IndexApi.setToken(IndexDiscovery.token(context))
         var page = 0
         var totalPages = 1
         var totalLines = 0

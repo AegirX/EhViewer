@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -30,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -98,6 +100,7 @@ fun IndexSearchScaffold() {
     val listState = rememberLazyListState()
     val searchFieldState = rememberTextFieldState()
     var expanded by remember { mutableStateOf(false) }
+    var showServer by remember { mutableStateOf(false) }
     val favorites = remember { mutableStateMapOf<String, Boolean>() }
     var filterReady by remember { mutableStateOf(false) }
 
@@ -243,12 +246,17 @@ fun IndexSearchScaffold() {
             ),
         ) {
             item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = if (vm.hits.isEmpty()) vm.status else "${vm.status} · 共 ${"%,d".format(vm.total)} 条 · ${vm.took} ms",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { showServer = true }) { Text("服务器") }
                 }
             }
             vm.error?.let { message ->
@@ -310,6 +318,73 @@ fun IndexSearchScaffold() {
             }
         }
     }
+
+    if (showServer) {
+        ServerDialog(
+            initialAddress = IndexDiscovery.manual(context).orEmpty()
+                .removePrefix("http://").removePrefix("https://"),
+            initialToken = IndexDiscovery.token(context).orEmpty(),
+            onDismiss = { showServer = false },
+            onSave = { address, token ->
+                IndexDiscovery.setManual(context, address)
+                IndexDiscovery.setToken(context, token)
+                IndexApi.setToken(token)
+                showServer = false
+                scope.launch {
+                    runCatching {
+                        vm.status = "已连接 ${IndexDiscovery.discover(context, force = true)}"
+                        vm.discovered = true
+                    }.onFailure {
+                        vm.status = it.message ?: "连接失败"
+                        vm.discovered = false
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ServerDialog(
+    initialAddress: String,
+    initialToken: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var address by remember { mutableStateOf(initialAddress) }
+    var token by remember { mutableStateOf(initialToken) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("服务器地址") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("地址（可带端口）") },
+                    placeholder = { Text("zz.frp.one:38932") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("访问令牌（服务器设了 FL_TOKEN 才需要）") },
+                    singleLine = true,
+                )
+                Text(
+                    "留空地址表示只用局域网自动发现；填了会优先连它（适合 frp 隧道等非局域网访问）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(address.trim(), token.trim()) }) { Text("保存并连接") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
